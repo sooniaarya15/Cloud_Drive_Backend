@@ -4,7 +4,11 @@ import { env } from "../config/env.js";
 const { Pool } = pg;
 
 export const pool = new Pool({
-  connectionString: env.databaseUrl,
+  host: env.host,
+  port: env.port,
+  database: env.database,
+  user: env.user,
+  password: env.password,
   ssl: { rejectUnauthorized: false }, // required for Supabase
   max: 10,
   idleTimeoutMillis: 30000,
