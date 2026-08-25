@@ -159,3 +159,106 @@ export async function deleteFilePermanently(req, res, next) {
     next(err);
   }
 }
+
+export const renameFileSchema = z.object({
+  name: z.string().min(1).max(255),
+});
+
+export const moveFileSchema = z.object({
+  folderId: z.string().uuid().nullable(),
+});
+
+/** PATCH /api/files/:id — rename and/or move (matches spec: { name?, folderId? }) */
+export async function updateFile(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { name, folderId } = req.body;
+    const ownerId = req.user.id;
+
+    const existing = await query(
+      "SELECT * FROM files WHERE id = $1 AND owner_id = $2 AND is_deleted = false",
+      [id, ownerId]
+    );
+    if (existing.rowCount === 0) throw Errors.notFound("File");
+
+    if (folderId) {
+      const folder = await query(
+        "SELECT id FROM folders WHERE id = $1 AND owner_id = $2 AND is_deleted = false",
+        [folderId, ownerId]
+      );
+      if (folder.rowCount === 0) throw Errors.notFound("Target folder");
+    }
+
+    const result = await query(
+      `UPDATE files SET
+         name = coalesce($1, name),
+         folder_id = CASE WHEN $2::boolean THEN $3::uuid ELSE folder_id END,
+         updated_at = now()
+       WHERE id = $4
+       RETURNING *`,
+      [name ?? null, folderId !== undefined, folderId ?? null, id]
+    );
+
+    res.json(toFileResponse(result.rows[0]));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/files/:id/trash — soft delete (move to Trash) */
+export async function trashFile(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      "UPDATE files SET is_deleted = true, deleted_at = now() WHERE id = $1 AND owner_id = $2 AND is_deleted = false RETURNING id",
+      [id, req.user.id]
+    );
+    if (result.rowCount === 0) throw Errors.notFound("File");
+
+    await query(
+      `INSERT INTO activities (actor_id, action, resource_type, resource_id)
+       VALUES ($1, 'delete', 'file', $2)`,
+      [req.user.id, id]
+    );
+
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/files/:id/restore — restore from Trash */
+export async function restoreFile(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      "UPDATE files SET is_deleted = false, deleted_at = null WHERE id = $1 AND owner_id = $2 RETURNING *",
+      [id, req.user.id]
+    );
+    if (result.rowCount === 0) throw Errors.notFound("File");
+
+    await query(
+      `INSERT INTO activities (actor_id, action, resource_type, resource_id)
+       VALUES ($1, 'restore', 'file', $2)`,
+      [req.user.id, id]
+    );
+
+    res.json(toFileResponse(result.rows[0]));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /api/files?folderId=... — list files in a folder (root if omitted) */
+export async function listFiles(req, res, next) {
+  try {
+    const folderId = req.query.folderId || null;
+    const result = await query(
+      "SELECT * FROM files WHERE owner_id = $1 AND is_deleted = false AND coalesce(folder_id::text,'') = coalesce($2::text,'') ORDER BY name",
+      [req.user.id, folderId]
+    );
+    res.json(result.rows.map(toFileResponse));
+  } catch (err) {
+    next(err);
+  }
+}

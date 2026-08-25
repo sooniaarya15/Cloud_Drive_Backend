@@ -7,22 +7,29 @@ import {
   initUpload,
   completeUpload,
   getFile,
+  listFiles,
+  updateFile,
+  trashFile,
+  restoreFile,
   deleteFilePermanently,
   initUploadSchema,
+  renameFileSchema,
+  moveFileSchema,
 } from "../controllers/file.controller.js";
 
 const router = Router();
 
-router.use(requireAuth); // every route below requires a valid access token
+router.use(requireAuth);
 
-// Small-file direct upload (multipart/form-data)
+router.get("/", listFiles);
 router.post("/upload", upload.single("file"), uploadFile);
-
-// Large-file presigned flow
 router.post("/init", validate(initUploadSchema), initUpload);
 router.post("/complete", completeUpload);
 
 router.get("/:id", getFile);
-router.delete("/:id", deleteFilePermanently);
+router.patch("/:id", updateFile); // { name?, folderId? } — matches spec 9.3
+router.post("/:id/trash", trashFile);
+router.post("/:id/restore", restoreFile);
+router.delete("/:id", deleteFilePermanently); // permanent delete (Trash -> Delete Forever)
 
 export default router;
