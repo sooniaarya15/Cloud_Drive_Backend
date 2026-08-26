@@ -10,6 +10,7 @@ import authRoutes from "./routes/auth.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import fileRoutes from "./routes/file.routes.js";
 import folderRoutes from "./routes/folder.routes.js";
+import shareRoutes from "./routes/share.routes.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.get("/health", async (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/folders", folderRoutes);
+app.use("/api", shareRoutes); // exposes /api/shares, /api/link-shares, /api/link/:token
 
 app.use((req, res) => {
   res.status(404).json({ error: { code: "NOT_FOUND", message: "Route not found" } });
