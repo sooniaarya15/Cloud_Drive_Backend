@@ -11,6 +11,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import fileRoutes from "./routes/file.routes.js";
 import folderRoutes from "./routes/folder.routes.js";
 import shareRoutes from "./routes/share.routes.js";
+import searchRoutes from "./routes/search.routes.js";
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/folders", folderRoutes);
 app.use("/api", shareRoutes); // exposes /api/shares, /api/link-shares, /api/link/:token
+app.use("/api", searchRoutes); // /api/search, /api/recent, /api/stars, /api/trash
 
 app.use((req, res) => {
   res.status(404).json({ error: { code: "NOT_FOUND", message: "Route not found" } });
