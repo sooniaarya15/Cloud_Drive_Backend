@@ -19,7 +19,6 @@ export const createLinkShareSchema = z.object({
   password: z.string().min(4).nullable().optional(),
 });
 
-/** Verifies the requesting user owns the file/folder before allowing them to share it. */
 async function assertOwnership(resourceType, resourceId, ownerId) {
   const table = resourceType === "file" ? "files" : "folders";
   const result = await query(
@@ -29,50 +28,58 @@ async function assertOwnership(resourceType, resourceId, ownerId) {
   if (result.rowCount === 0) throw Errors.notFound(resourceType === "file" ? "File" : "Folder");
 }
 
-/** POST /api/shares — grant a specific user Viewer/Editor access */
+/**
+ * POST /api/shares — grant a specific user (or pending invite, if they haven't
+ * registered yet) Viewer/Editor access.
+ */
 export async function createShare(req, res, next) {
   try {
     const { resourceType, resourceId, granteeEmail, role } = req.body;
     const ownerId = req.user.id;
+    const normalizedEmail = granteeEmail.trim().toLowerCase();
 
     await assertOwnership(resourceType, resourceId, ownerId);
 
-    const grantee = await query("SELECT id FROM users WHERE email = $1", [granteeEmail.toLowerCase()]);
-    if (grantee.rowCount === 0) throw Errors.notFound("User with that email");
-    const granteeId = grantee.rows[0].id;
+    const grantee = await query("SELECT id FROM users WHERE email = $1", [normalizedEmail]);
+    const granteeId = grantee.rowCount > 0 ? grantee.rows[0].id : null;
 
     if (granteeId === ownerId) throw Errors.validation("You already own this item");
 
     const result = await query(
-      `INSERT INTO shares (resource_type, resource_id, grantee_user_id, role, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (resource_type, resource_id, grantee_user_id)
-       DO UPDATE SET role = EXCLUDED.role
+      `INSERT INTO shares (resource_type, resource_id, grantee_user_id, grantee_email, role, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (resource_type, resource_id, COALESCE(grantee_email, ''))
+       DO UPDATE SET role = EXCLUDED.role, grantee_user_id = EXCLUDED.grantee_user_id
        RETURNING *`,
-      [resourceType, resourceId, granteeId, role, ownerId]
+      [resourceType, resourceId, granteeId, normalizedEmail, role, ownerId]
     );
 
     await query(
       `INSERT INTO activities (actor_id, action, resource_type, resource_id, context)
        VALUES ($1, 'share', $2, $3, $4)`,
-      [ownerId, resourceType, resourceId, JSON.stringify({ granteeEmail, role })]
+      [ownerId, resourceType, resourceId, JSON.stringify({ granteeEmail: normalizedEmail, role })]
     );
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({
+      ...result.rows[0],
+      pending: granteeId === null, // true = invited user hasn't signed up yet
+    });
   } catch (err) {
     next(err);
   }
 }
 
-/** GET /api/shares/:resourceType/:resourceId — list who has access */
+/** GET /api/shares/:resourceType/:resourceId — list who has access (registered + pending) */
 export async function listShares(req, res, next) {
   try {
     const { resourceType, resourceId } = req.params;
     await assertOwnership(resourceType, resourceId, req.user.id);
 
     const result = await query(
-      `SELECT s.id, s.role, s.created_at, u.id AS user_id, u.name, u.email, u.image_url
-       FROM shares s JOIN users u ON u.id = s.grantee_user_id
+      `SELECT s.id, s.role, s.created_at, s.grantee_email,
+              u.id AS user_id, u.name, u.email, u.image_url
+       FROM shares s
+       LEFT JOIN users u ON u.id = s.grantee_user_id
        WHERE s.resource_type = $1 AND s.resource_id = $2
        ORDER BY s.created_at DESC`,
       [resourceType, resourceId]
@@ -83,7 +90,10 @@ export async function listShares(req, res, next) {
         shareId: r.id,
         role: r.role,
         createdAt: r.created_at,
-        user: { id: r.user_id, name: r.name, email: r.email, imageUrl: r.image_url },
+        pending: !r.user_id,
+        user: r.user_id
+          ? { id: r.user_id, name: r.name, email: r.email, imageUrl: r.image_url }
+          : { email: r.grantee_email, name: null },
       }))
     );
   } catch (err) {
@@ -91,18 +101,15 @@ export async function listShares(req, res, next) {
   }
 }
 
-/** DELETE /api/shares/:id — revoke access */
+/** DELETE /api/shares/:id — revoke access (registered or pending) */
 export async function deleteShare(req, res, next) {
   try {
     const { id } = req.params;
-
-    // Only the resource owner (created_by) can revoke
     const result = await query(
       "DELETE FROM shares WHERE id = $1 AND created_by = $2 RETURNING id",
       [id, req.user.id]
     );
     if (result.rowCount === 0) throw Errors.notFound("Share");
-
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -137,7 +144,6 @@ export async function listSharedWithMe(req, res, next) {
 
 // ---------------- Public Links ----------------
 
-/** POST /api/link-shares — create a public shareable link */
 export async function createLinkShare(req, res, next) {
   try {
     const { resourceType, resourceId, expiresAt, password } = req.body;
@@ -145,7 +151,7 @@ export async function createLinkShare(req, res, next) {
 
     await assertOwnership(resourceType, resourceId, ownerId);
 
-    const token = crypto.randomBytes(24).toString("hex"); // long, random, unguessable
+    const token = crypto.randomBytes(24).toString("hex");
     const passwordHash = password ? await hashPassword(password) : null;
 
     const result = await query(
@@ -167,7 +173,6 @@ export async function createLinkShare(req, res, next) {
   }
 }
 
-/** GET /api/link/:token — resolve a public link (with optional ?password=) */
 export async function resolveLink(req, res, next) {
   try {
     const { token } = req.params;
@@ -224,7 +229,6 @@ export async function resolveLink(req, res, next) {
   }
 }
 
-/** DELETE /api/link-shares/:id — revoke a public link */
 export async function deleteLinkShare(req, res, next) {
   try {
     const { id } = req.params;
@@ -237,4 +241,15 @@ export async function deleteLinkShare(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/**
+ * Called from register() right after a new user is created — links any
+ * pending shares that were invited to this email before they signed up.
+ */
+export async function linkPendingShares(userId, email) {
+  await query(
+    "UPDATE shares SET grantee_user_id = $1 WHERE grantee_email = $2 AND grantee_user_id IS NULL",
+    [userId, email.toLowerCase()]
+  );
 }

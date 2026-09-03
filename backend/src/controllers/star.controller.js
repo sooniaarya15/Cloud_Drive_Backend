@@ -7,7 +7,6 @@ export const starSchema = z.object({
   resourceId: z.string().uuid(),
 });
 
-/** POST /api/stars — star an item (spec 9.6) */
 export async function addStar(req, res, next) {
   try {
     const { resourceType, resourceId } = req.body;
@@ -30,7 +29,6 @@ export async function addStar(req, res, next) {
   }
 }
 
-/** DELETE /api/stars — unstar (body: { resourceType, resourceId }) */
 export async function removeStar(req, res, next) {
   try {
     const { resourceType, resourceId } = req.body;
@@ -51,7 +49,6 @@ export async function removeStar(req, res, next) {
   }
 }
 
-/** GET /api/trash — list soft-deleted files & folders (spec 9.6) */
 export async function listTrash(req, res, next) {
   try {
     const [files, folders] = await Promise.all([
@@ -81,7 +78,6 @@ export const trashRestoreSchema = z.object({
   resourceId: z.string().uuid(),
 });
 
-/** POST /api/trash/restore — restore a file or folder from Trash (spec 9.6) */
 export async function restoreFromTrash(req, res, next) {
   try {
     const { resourceType, resourceId } = req.body;

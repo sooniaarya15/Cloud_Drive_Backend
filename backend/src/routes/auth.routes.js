@@ -8,8 +8,12 @@ import {
   logout,
   refresh,
   me,
+  forgotPassword,
+  resetPassword,
   registerSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from "../controllers/auth.controller.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 
@@ -21,7 +25,9 @@ router.post("/logout", logout);
 router.post("/refresh", refresh);
 router.get("/me", requireAuth, me);
 
-// Google OAuth flow
+router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
+
 router.get(
   "/google",
   passport.authenticate("google", { scope: ["profile", "email"], session: false })
@@ -38,7 +44,6 @@ router.get(
     res.cookie("access_token", accessToken, { httpOnly: true, maxAge: 15 * 60 * 1000 });
     res.cookie("refresh_token", refreshToken, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
 
-    // Redirect back to frontend after successful login
     res.redirect(`${process.env.CORS_ORIGIN}/auth/callback`);
   }
 );

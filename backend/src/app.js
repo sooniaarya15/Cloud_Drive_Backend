@@ -9,6 +9,7 @@ import { env } from "./config/env.js";
 import { pool } from "./db/pool.js";
 import authRoutes from "./routes/auth.routes.js";
 import fileRoutes from "./routes/file.routes.js";
+import versionRoutes from "./routes/version.routes.js";
 import folderRoutes from "./routes/folder.routes.js";
 import shareRoutes from "./routes/share.routes.js";
 import searchRoutes from "./routes/search.routes.js";
@@ -35,6 +36,7 @@ app.get("/health", async (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/folders", folderRoutes);
+app.use("/api/versions", versionRoutes);
 app.use("/api", shareRoutes);
 app.use("/api", searchRoutes);
 
