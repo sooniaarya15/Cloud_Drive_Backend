@@ -76,6 +76,7 @@ export async function getFolder(req, res, next) {
     }
 
     const folderIdParam = isRoot ? null : id;
+    
     const [subfolders, files] = await Promise.all([
       query(
         "SELECT * FROM folders WHERE owner_id = $1 AND is_deleted = false AND coalesce(parent_id::text,'') = coalesce($2::text,'') ORDER BY name",
