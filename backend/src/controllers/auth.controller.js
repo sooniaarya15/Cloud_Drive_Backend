@@ -62,7 +62,6 @@ export async function register(req, res, next) {
     if (existing.rowCount > 0) throw Errors.duplicateEmail(normalizedEmail);
 
     const passwordHash = await hashPassword(password);
-
     const result = await query(
       `INSERT INTO users (name, email, password_hash, auth_provider)
        VALUES ($1, $2, $3, 'LOCAL')
